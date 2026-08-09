@@ -1,0 +1,103 @@
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+
+# ضبط إعدادات الصفحة
+st.set_page_config(page_title="نظام الإيرادات والمصروفات", layout="wide")
+
+st.title("📊 نظام تسجيل الإيرادات والمصروفات حسب الموظف")
+
+# 1. قائمة الموظفين وأكوادهم (يمكن تغييرها أو ربطها بقاعدة بيانات)
+EMPLOYEES = {
+    "101": "أحمد محمود",
+    "102": "محمد علي",
+    "103": "سارة حسن"
+}
+
+# تهيئة ذاكرة موقتة لحفظ البيانات (في التطبيق الفعلي نربطها بقاعدة بيانات أو Google Sheets)
+if "transactions" not in st.session_state:
+    st.session_state.transactions = pd.DataFrame(
+        columns=["التاريخ", "كود الموظف", "اسم الموظف", "النوع", "المبلغ", "البيان / الوصف"]
+    )
+
+# إنشاء تبويبات في الصفحة
+tab1, tab2, tab3 = st.tabs(["➕ تسجيل عملية جديدة", "📈 التقارير والحركات", "👥 قائمة الموظفين"])
+
+# --- التبويب الأول: تسجيل عملية ---
+with tab1:
+    st.subheader("تسجيل إيراد أو مصروف")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        emp_code = st.text_input("ادخل كود الموظف:")
+        emp_name = EMPLOYEES.get(emp_code, "")
+        
+        if emp_code:
+            if emp_name:
+                st.success(f"الموظف: **{emp_name}**")
+            else:
+                st.error("كود الموظف غير صحيح!")
+
+        trans_type = st.selectbox("نوع العملية:", ["إيراد", "مصروف"])
+
+    with col2:
+        amount = st.number_input("المبلغ:", min_value=0.0, step=10.0)
+        description = st.text_area("البيان / الوصف:")
+
+    if st.button("حفظ العملية"):
+        if not emp_code or not emp_name:
+            st.warning("يرجى إدخال كود موظف صحيح قبل الحفظ.")
+        elif amount <= 0:
+            st.warning("يرجى إدخال مبلغ أكبر من الصفر.")
+        else:
+            new_data = {
+                "التاريخ": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "كود الموظف": emp_code,
+                "اسم الموظف": emp_name,
+                "النوع": trans_type,
+                "المبلغ": amount,
+                "البيان / الوصف": description
+            }
+            # إضافة السجل الجديد
+            st.session_state.transactions = pd.concat(
+                [st.session_state.transactions, pd.DataFrame([new_data])], 
+                ignore_index=True
+            )
+            st.success("تم تسجيل العملية بنجاح!")
+
+# --- التبويب الثاني: التقارير ---
+with tab2:
+    st.subheader("سجل العمليات والتقارير")
+    
+    df = st.session_state.transactions
+    
+    if not df.empty:
+        # ملخص مالي
+        total_income = df[df["النوع"] == "إيراد"]["المبلغ"].sum()
+        total_expense = df[df["النوع"] == "مصروف"]["المبلغ"].sum()
+        balance = total_income - total_expense
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("إجمالي الإيرادات", f"{total_income:,.2f}")
+        col2.metric("إجمالي المصروفات", f"{total_expense:,.2f}")
+        col3.metric("الصافي", f"{balance:,.2f}")
+        
+        st.divider()
+        
+        # فلترة حسب الموظف
+        selected_emp = st.selectbox("تصفية حسب الموظف:", ["الكل"] + list(EMPLOYEES.keys()))
+        if selected_emp != "الكل":
+            filtered_df = df[df["كود الموظف"] == selected_emp]
+        else:
+            filtered_df = df
+            
+        st.dataframe(filtered_df, use_container_width=True)
+    else:
+        st.info("لا توجد عمليات مسجلة حتى الآن.")
+
+# --- التبويب الثالث: الموظفين ---
+with tab3:
+    st.subheader("أكواد الموظفين المعتمدة")
+    emp_df = pd.DataFrame(list(EMPLOYEES.items()), columns=["كود الموظف", "اسم الموظف"])
+    st.table(emp_df)
