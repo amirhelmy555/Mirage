@@ -74,7 +74,7 @@ translations = {
         "refresh_btn": "🔄 Refresh Data",
         "refresh_success": "✅ Data refreshed successfully!",
         "upload_success": (
-            "✅ Excel uploaded successfully! Employee passwords synced."
+            "✅ Excel uploaded successfully! Database updated."
         ),
         "remove_success": "🗑️ Excel file removed. Portal locked and data wiped.",
         "input_label": "🆔 National ID (الرقم القومي):",
@@ -123,7 +123,7 @@ translations = {
         "remove_btn": "🗑️ حذف ملف الـ Excel (إغلاق البوابة ومسح البيانات)",
         "refresh_btn": "🔄 تحديث البيانات",
         "refresh_success": "✅ تم تحديث البيانات بنجاح!",
-        "upload_success": "✅ تم رفع الملف وتحديث كلمات المرور بنجاح!",
+        "upload_success": "✅ تم رفع الملف وتحديث قاعدة البيانات بنجاح!",
         "remove_success": "🗑️ تم حذف الملف وإغلاق البوابة ومسح البيانات.",
         "input_label": "🆔 الرقم القومي (National ID):",
         "check_id_btn": "➡️ التالي / التحقق من الرقم",
@@ -267,7 +267,7 @@ else:
     try:
       df_upload = read_excel_file(uploaded_file)
 
-      # 1. جلب كلمات المرور المخزنة حالياً
+      # 1. جلب كلمات المرور القديمة المخزنة سابقاً
       existing_passwords = {}
       if os.path.exists(SHARED_FILE):
         df_old = load_excel_df()
@@ -282,7 +282,7 @@ else:
             if pwd and pwd.lower() not in ["nan", "none"]:
               existing_passwords[nid] = pwd
 
-      # 2. فحص وتحديد الباسورد لكل موظف
+      # 2. تحديث قائمة الباسوردات بناءً على الشيت المرفوع
       pass_col = []
       has_uploaded_pass = "Password" in df_upload.columns
 
@@ -292,14 +292,16 @@ else:
             clean_str(row.get("Password", "")) if has_uploaded_pass else ""
         )
 
-        # أولوية 1: إذا المحاسب كتب كلمة مرور صريحة في الشيت المرفوع حديثاً
-        if uploaded_pwd and uploaded_pwd.lower() not in ["nan", "none"]:
-          pass_col.append(uploaded_pwd)
-        # أولوية 2: الاحتفاظ بالكلمة المخزنة سابقاً إن لم يتم تغييرها في الشيت
-        elif nid in existing_passwords:
-          pass_col.append(existing_passwords[nid])
+        # إذا الشيت المرفوع يحتوي على قيمة صريحة للموظف (سواء باسورد أو فارغ)
+        if has_uploaded_pass:
+          if uploaded_pwd and uploaded_pwd.lower() not in ["nan", "none"]:
+            pass_col.append(uploaded_pwd)
+          else:
+            # إذا ترك المحاسب الخانة فارغة تماماً في الشيت المرفوع، يتم مسح الباسورد القديم
+            pass_col.append("")
         else:
-          pass_col.append("")
+          # إذا لم يحتوي الشيت المرفوع اصلاً على عمود Password، يتم الاحتفاظ بالقديم إن وجد
+          pass_col.append(existing_passwords.get(nid, ""))
 
       df_upload["Password"] = pass_col
 
@@ -321,7 +323,9 @@ else:
         name = row.get("الاسم", f"Employee {idx}")
         nid = clean_str(row.get("الرقم القومي", ""))
         current_pwd = clean_str(row.get("Password", ""))
-        has_pass = bool(current_pwd)
+        has_pass = (
+            bool(current_pwd) and current_pwd.lower() not in ["nan", "none"]
+        )
         status_text = "🔒 Registered" if has_pass else "⏳ Not Registered"
 
         with st.sidebar.expander(f"👤 {name} ({status_text})"):
@@ -334,7 +338,7 @@ else:
               st.success(t["reset_success"].format(name=name))
               st.rerun()
           else:
-            st.info("ℹ️ لم يقم الموظف بإنشاء كلمة مرور بعد.")
+            st.info("ℹ️ لم يتم تحديد كلمة مرور لهذا الموظف بعد.")
 
       st.sidebar.markdown("---")
       df_export = df_admin.copy()
@@ -508,8 +512,33 @@ else:
             st.session_state.checked_id = None
             st.rerun()
 
-          # حالة 1: الشيت لا يحتوي على كلمة مرور لهذا الموظف
-          if not current_pass or current_pass.lower() in ["nan", "none"]:
+          # التحقق مما إذا كانت الخانة تحوي كلمة مرور حقيقية
+          has_valid_password = bool(
+              current_pass and current_pass.lower() not in ["nan", "none"]
+          )
+
+          if has_valid_password:
+            # الخيار 1: توجد كلمة مرور في الشيت (كتبها المحاسب أو أنشأها الموظف سابقاً) 👈 يطلب كلمة المرور مباشرةً
+            password_input = st.text_input(
+                t["password_input_label"],
+                type="password",
+                key="password_input_field",
+            )
+            submit_login = st.button(t["login_btn"])
+
+            if submit_login:
+              if not password_input:
+                st.warning(t["empty_input"])
+              elif hash_password(password_input) == current_pass:
+                st.session_state.logged_in_user = emp_name
+                st.session_state.logged_in_id = national_id_input
+                st.session_state.employee_row_data = matched.loc[idx].to_dict()
+                st.session_state.checked_id = None
+                st.rerun()
+              else:
+                st.error(t["error_login"])
+          else:
+            # الخيار 2: الخانة فارغة 👈 يطلب من الموظف إنشاء كلمة مرور جديدة
             st.warning(
                 "✨ هذه زيارتك الأولى أو تم إعادة تعيين حسابك! يرجى إنشاء كلمة"
                 " مرور خاصة بك."
@@ -532,7 +561,6 @@ else:
               elif new_pass != confirm_pass:
                 st.error(t["pass_mismatch"])
               else:
-                # حفظ الباسورد الجديد
                 df_current.at[idx, "Password"] = hash_password(new_pass)
                 save_excel_safely(df_current)
 
@@ -544,26 +572,6 @@ else:
                 st.session_state.checked_id = None
                 st.success(t["register_success"])
                 st.rerun()
-          else:
-            # حالة 2: يوجد كلمة مرور في الشيت (سواء كتبها الموظف أو أضافها المحاسب بنفسه)
-            password_input = st.text_input(
-                t["password_input_label"],
-                type="password",
-                key="password_input_field",
-            )
-            submit_login = st.button(t["login_btn"])
-
-            if submit_login:
-              if not password_input:
-                st.warning(t["empty_input"])
-              elif hash_password(password_input) == current_pass:
-                st.session_state.logged_in_user = emp_name
-                st.session_state.logged_in_id = national_id_input
-                st.session_state.employee_row_data = matched.loc[idx].to_dict()
-                st.session_state.checked_id = None
-                st.rerun()
-              else:
-                st.error(t["error_login"])
 
   except Exception as e:
     st.error(t["error_read"].format(error=e))
