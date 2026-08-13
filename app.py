@@ -35,9 +35,10 @@ def hash_password(password: str) -> str:
     if not password:
         return ""
     # If password is already hashed (64 char hex), keep it as is
-    if len(str(password).strip()) == 64 and all(c in '0123456789abcdefABCDEF' for c in str(password).strip()):
-        return str(password).strip()
-    return hashlib.sha256(str(password).strip().encode()).hexdigest()
+    clean_p = str(password).strip()
+    if len(clean_p) == 64 and all(c in '0123456789abcdefABCDEF' for c in clean_p):
+        return clean_p
+    return hashlib.sha256(clean_p.encode()).hexdigest()
 
 
 # --- CORE LOGIC: PORTAL STATUS GATEKEEPER ---
@@ -78,24 +79,23 @@ translations = {
         "refresh_btn": "🔄 Refresh Data",
         "refresh_success": "✅ Data refreshed successfully!",
         "upload_success": (
-            "✅ Excel uploaded successfully! Portal automatically unlocked."
+            "✅ Excel uploaded successfully! Existing employee passwords preserved automatically."
         ),
         "remove_success": "🗑️ Excel file removed. Portal locked and data wiped.",
         "input_label": "🆔 National ID (الرقم القومي):",
         "check_id_btn": "➡️ Next / Verify ID",
         "password_input_label": "🔒 Password (كلمة المرور):",
-        "new_password_label": "✨ Create Your Password (أنشئ كلمة المرور):",
+        "new_password_label": "✨ Create Your Password (أنشئ كلمة المرور الخاصة بك):",
         "confirm_password_label": "✔️ Confirm Password (تأكيد كلمة المرور):",
-        "register_btn": "🚀 Register & Login",
-        "login_btn": "🔑 Login",
+        "register_btn": "🚀 Create Password & Login (حفظ كلمة المرور والدخول)",
+        "login_btn": "🔑 Login (تسجيل الدخول)",
         "logout_btn": "🚪 Logout",
         "back_btn": "⬅️ Back",
         "empty_input": "⚠️ Please fill in all required fields.",
         "pass_mismatch": "❌ Passwords do not match. Please try again.",
-        "pass_taken": "⚠️ This password pattern is not allowed. Please choose another.",
         "error_id": "⚠️ National ID not found. Please check and try again.",
         "error_login": "❌ Incorrect Password. Please check and try again.",
-        "register_success": "🎉 Password created successfully! Welcome.",
+        "register_success": "🎉 Password created & saved automatically! Welcome.",
         "error_read": "❌ Error reading file: {error}",
         "dashboard_title": "📊 Monthly Salary & Entitlements Details",
         "welcome_banner": "👋 Welcome, {name}!",
@@ -124,23 +124,22 @@ translations = {
         "remove_btn": "🗑️ حذف ملف الـ Excel (إغلاق البوابة ومسح البيانات)",
         "refresh_btn": "🔄 تحديث البيانات",
         "refresh_success": "✅ تم تحديث البيانات بنجاح!",
-        "upload_success": "✅ تم رفع الملف بنجاح! تم فتح البوابة تلقائياً.",
+        "upload_success": "✅ تم رفع الملف بنجاح! تم الدمج والحفاظ على باسوردات الموظفين المسجلة تلقائياً.",
         "remove_success": "🗑️ تم حذف الملف وإغلاق البوابة ومسح البيانات.",
         "input_label": "🆔 الرقم القومي (National ID):",
         "check_id_btn": "➡️ التالي / التحقق من الرقم",
         "password_input_label": "🔒 كلمة المرور (Password):",
-        "new_password_label": "✨ أنشئ كلمة المرور الخاصة بك:",
+        "new_password_label": "✨ أنشئ كلمة المرور الخاصة بك لأول مرة:",
         "confirm_password_label": "✔️ تأكيد كلمة المرور:",
-        "register_btn": "🚀 التسجيل والدخول",
+        "register_btn": "🚀 حفظ كلمة المرور وتسجيل الدخول",
         "login_btn": "🔑 تسجيل الدخول",
         "logout_btn": "🚪 تسجيل الخروج",
         "back_btn": "⬅️ رجوع",
         "empty_input": "⚠️ الرجاء ملء جميع الحقول المطلوبة.",
         "pass_mismatch": "❌ كلمتا المرور غير متطابقتين. يرجى المحاولة مرة أخرى.",
-        "pass_taken": "⚠️ كلمة المرور هذه غير متاحة. اختر كلمة مرور فريدة.",
         "error_id": "⚠️ الرقم القومي غير موجود. يرجى التحقق والمحاولة.",
         "error_login": "❌ كلمة المرور غير صحيحة. يرجى التحقق.",
-        "register_success": "🎉 تم إنشاء كلمة المرور بنجاح! أهلاً بك.",
+        "register_success": "🎉 تم حفظ كلمة المرور تلقائياً في قاعدة البيانات! أهلاً بك.",
         "error_read": "❌ خطأ في قراءة الملف: {error}",
         "dashboard_title": "📊 تفاصيل الراتب الشهري والمستحقات المالية",
         "welcome_banner": "👋 أهلاً بك يا {name}!",
@@ -218,6 +217,7 @@ def load_excel_df():
 
 
 def save_excel_safely(df):
+    """Saves updated dataframe back to shared file."""
     if "الرقم القومي" in df.columns:
         df["الرقم القومي"] = df["الرقم القومي"].apply(clean_str)
     if "Password" in df.columns:
@@ -268,7 +268,7 @@ else:
         try:
             df_upload = read_excel_file(uploaded_file)
 
-            # 1. جلب كلمات المرور الموجودة حالياً في النظام إن وجدت
+            # 1. الاحتفاظ بالكلمات المرور الحالية المخزنة في النظام إن وجدت
             existing_passwords = {}
             if os.path.exists(SHARED_FILE):
                 df_old = load_excel_df()
@@ -283,7 +283,7 @@ else:
                         if pwd and pwd.lower() not in ["nan", "none"]:
                             existing_passwords[nid] = pwd
 
-            # 2. فحص الملف المرفوع: إذا كان يحتوي على كلمة مرور/Password سياخذها
+            # 2. فحص وتطابق الشيت المرفوع مع الباسوردات السابقة
             pass_col = []
             has_uploaded_pass = "Password" in df_upload.columns
 
@@ -291,10 +291,10 @@ else:
                 nid = clean_str(row.get("الرقم القومي", ""))
                 uploaded_pwd = clean_str(row.get("Password", "")) if has_uploaded_pass else ""
 
-                # أولوية 1: الباسورد المكتوب في الشيت المرفوع حديثاً
+                # أولوية 1: الباسوردات المكتوبة يدوياً في الشيت المرفوع (إن وجدت)
                 if uploaded_pwd and uploaded_pwd.lower() not in ["nan", "none"]:
                     pass_col.append(hash_password(uploaded_pwd))
-                # أولوية 2: الباسورد المحفوظ سابقاً في ذاكرة النظام
+                # أولوية 2: الباسوردات التي سجلها الموظفون بأنفسهم في النظام سابقاً
                 elif nid in existing_passwords:
                     pass_col.append(existing_passwords[nid])
                 else:
@@ -336,7 +336,7 @@ else:
                             st.success(t["reset_success"].format(name=name))
                             st.rerun()
                     else:
-                        st.info("ℹ️ No password set yet.")
+                        st.info("ℹ️ لم يقم الموظف بإنشاء كلمة مرور بعد.")
 
             st.sidebar.markdown("---")
             df_export = df_admin.copy()
@@ -349,7 +349,7 @@ else:
             st.sidebar.download_button(
                 label=t["download_btn"],
                 data=excel_bytes,
-                file_name="mirage_payroll_database.xlsx",
+                file_name="mirage_payroll_database_with_passwords.xlsx",
                 mime=(
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 ),
@@ -519,11 +519,10 @@ else:
                         st.session_state.checked_id = None
                         st.rerun()
 
-                    # Check if user needs to create a password
+                    # خطوة إنشاء الباسورد تلقائياً للموظف في أول مرة
                     if not current_pass:
-                        st.info(
-                            "✨ First time here? Please create a secure,"
-                            " unique password for your account."
+                        st.warning(
+                            "✨ هذه زيارتك الأولى! يرجى إنشاء كلمة مرور خاصة بك لحماية حسابك."
                         )
                         new_pass = st.text_input(
                             t["new_password_label"],
@@ -543,6 +542,7 @@ else:
                             elif new_pass != confirm_pass:
                                 st.error(t["pass_mismatch"])
                             else:
+                                # تشفير الباسورد وحفظه مباشرة داخل الملف الرئيسي
                                 hashed_new_pass = hash_password(new_pass)
                                 df_current.at[idx, "Password"] = hashed_new_pass
                                 save_excel_safely(df_current)
