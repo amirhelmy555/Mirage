@@ -69,13 +69,12 @@ translations = {
             "Administrator must unlock the portal to grant access."
         ),
         "upload_label": "📁 Upload Employees Excel File (.xlsx or .xls)",
-        "download_btn": "📥 Download Updated Database (Secure)",
+        "download_btn": "📥 Download Updated Database",
         "remove_btn": "🗑️ Remove Excel Sheet (Lock Portal & Wipe Data)",
         "refresh_btn": "🔄 Refresh Data",
         "refresh_success": "✅ Data refreshed successfully!",
         "upload_success": (
-            "✅ Excel uploaded successfully! Existing employee passwords"
-            " preserved automatically."
+            "✅ Excel uploaded successfully! Employee passwords synced."
         ),
         "remove_success": "🗑️ Excel file removed. Portal locked and data wiped.",
         "input_label": "🆔 National ID (الرقم القومي):",
@@ -120,14 +119,11 @@ translations = {
             " المسؤول تفعيل البوابة للسماح بالوصول."
         ),
         "upload_label": "📁 رفع ملف الـ Excel للموظفين (.xlsx أو .xls)",
-        "download_btn": "📥 تحميل قاعدة البيانات (Excel الآمن)",
+        "download_btn": "📥 تحميل قاعدة البيانات (Excel)",
         "remove_btn": "🗑️ حذف ملف الـ Excel (إغلاق البوابة ومسح البيانات)",
         "refresh_btn": "🔄 تحديث البيانات",
         "refresh_success": "✅ تم تحديث البيانات بنجاح!",
-        "upload_success": (
-            "✅ تم رفع الملف بنجاح! تم الدمج والحفاظ على باسوردات الموظفين"
-            " المسجلة تلقائياً."
-        ),
+        "upload_success": "✅ تم رفع الملف وتحديث كلمات المرور بنجاح!",
         "remove_success": "🗑️ تم حذف الملف وإغلاق البوابة ومسح البيانات.",
         "input_label": "🆔 الرقم القومي (National ID):",
         "check_id_btn": "➡️ التالي / التحقق من الرقم",
@@ -271,7 +267,7 @@ else:
     try:
       df_upload = read_excel_file(uploaded_file)
 
-      # 1. الاحتفاظ بالكلمات المرور الحالية المخزنة في النظام إن وجدت
+      # 1. جلب كلمات المرور المخزنة حالياً
       existing_passwords = {}
       if os.path.exists(SHARED_FILE):
         df_old = load_excel_df()
@@ -286,7 +282,7 @@ else:
             if pwd and pwd.lower() not in ["nan", "none"]:
               existing_passwords[nid] = pwd
 
-      # 2. فحص وتطابق الشيت المرفوع مع الباسوردات السابقة
+      # 2. فحص وتحديد الباسورد لكل موظف
       pass_col = []
       has_uploaded_pass = "Password" in df_upload.columns
 
@@ -296,10 +292,10 @@ else:
             clean_str(row.get("Password", "")) if has_uploaded_pass else ""
         )
 
-        # أولوية 1: الباسورد المكتوب في الشيت الجديد المرفوع
+        # أولوية 1: إذا المحاسب كتب كلمة مرور صريحة في الشيت المرفوع حديثاً
         if uploaded_pwd and uploaded_pwd.lower() not in ["nan", "none"]:
           pass_col.append(uploaded_pwd)
-        # أولوية 2: الباسورد السابق المسجل في السيرفر
+        # أولوية 2: الاحتفاظ بالكلمة المخزنة سابقاً إن لم يتم تغييرها في الشيت
         elif nid in existing_passwords:
           pass_col.append(existing_passwords[nid])
         else:
@@ -512,11 +508,11 @@ else:
             st.session_state.checked_id = None
             st.rerun()
 
-          # خطوة إنشاء الباسورد تلقائياً للموظف في أول مرة
-          if not current_pass:
+          # حالة 1: الشيت لا يحتوي على كلمة مرور لهذا الموظف
+          if not current_pass or current_pass.lower() in ["nan", "none"]:
             st.warning(
-                "✨ هذه زيارتك الأولى! يرجى إنشاء كلمة مرور خاصة بك لحماية"
-                " حسابك."
+                "✨ هذه زيارتك الأولى أو تم إعادة تعيين حسابك! يرجى إنشاء كلمة"
+                " مرور خاصة بك."
             )
             new_pass = st.text_input(
                 t["new_password_label"],
@@ -536,7 +532,7 @@ else:
               elif new_pass != confirm_pass:
                 st.error(t["pass_mismatch"])
               else:
-                # حفظ الباسورد كما هو (Plain Text)
+                # حفظ الباسورد الجديد
                 df_current.at[idx, "Password"] = hash_password(new_pass)
                 save_excel_safely(df_current)
 
@@ -549,6 +545,7 @@ else:
                 st.success(t["register_success"])
                 st.rerun()
           else:
+            # حالة 2: يوجد كلمة مرور في الشيت (سواء كتبها الموظف أو أضافها المحاسب بنفسه)
             password_input = st.text_input(
                 t["password_input_label"],
                 type="password",
