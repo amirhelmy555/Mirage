@@ -75,7 +75,7 @@ def clean_phone(phone_str):
 
 def send_whatsapp_otp(phone_number: str, otp_code: str) -> bool:
     if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
-        st.info(f"💡 [وضع التطوير]: رمز التحقق OTP الخاص بك هو: {otp_code}")
+        # وضع التطوير والاختبار المحلي
         return True
 
     url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json"
@@ -150,7 +150,7 @@ t = {
     "refresh_btn": "🔄 تحديث البيانات",
     "input_id": "🆔 الرقم القومي:",
     "input_phone": "📱 رقم الموبايل المسجل بالشيت:",
-    "send_otp_btn": "📩 عبر الواتساب (OTP) إرسال كود التحقق",
+    "send_otp_btn": "📩 إرسال كود التحقق (OTP) عبر الواتساب",
     "verify_otp_btn": "🔓 دخول وتأكيد الكود",
     "input_otp": "🔑 أدخل كود الـ OTP المكون من 4 أرقام:",
     "error_not_found": "❌ البيانات غير مطابقة. أعد التأكد من الرقم القومي ورقم الموبايل.",
@@ -286,6 +286,12 @@ if st.session_state.get("logged_in_user"):
 
 # 2. خطوة أدخال كود OTP
 elif st.session_state.otp_sent:
+    # عرض الكود للتجربة في حال عدم ضبط سيرفر الواتساب الخارجي
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+        st.warning(
+            f"💡 **[وضع التجربة الاختباري]**: كود التحقق الخاص بك هو: `{st.session_state.generated_otp}`"
+        )
+
     st.subheader("📩 تم إرسال كود التحقق إلى حساب الواتساب الخاص بك")
     st.info("يرجى مراجعة تطبيق الواتساب وإدخال الرمز المكون من 4 أرقام لتأكيد الهوية.")
     
