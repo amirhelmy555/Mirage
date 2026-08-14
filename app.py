@@ -22,18 +22,8 @@ if "logged_in_id" not in st.session_state:
   st.session_state.logged_in_id = None
 if "employee_row_data" not in st.session_state:
   st.session_state.employee_row_data = None
-if "checked_id" not in st.session_state:
-  st.session_state.checked_id = None
 if "uploader_key" not in st.session_state:
   st.session_state.uploader_key = 0
-
-
-# --- SECURITY HELPERS (Plaintext Password) ---
-def hash_password(password: str) -> str:
-  """Returns the plain password as-is (without hashing)."""
-  if not password:
-    return ""
-  return str(password).strip()
 
 
 # --- CORE LOGIC: PORTAL STATUS GATEKEEPER ---
@@ -57,7 +47,7 @@ def set_portal_status(is_open: bool):
 translations = {
     "English": {
         "title": "🔐 Mirage Payroll & Employee Portal",
-        "subtitle": "🆔 Please enter your National ID to proceed.",
+        "subtitle": "🆔 Please enter your National ID to view your details.",
         "admin_header": "🛠️ Admin Control Panel",
         "admin_pass_label": "🔑 Enter Admin Password:",
         "admin_pass_btn": "🔓 Unlock Admin Panel",
@@ -69,7 +59,7 @@ translations = {
             "Administrator must unlock the portal to grant access."
         ),
         "upload_label": "📁 Upload Employees Excel File (.xlsx or .xls)",
-        "download_btn": "📥 Download Updated Database",
+        "download_btn": "📥 Download Database",
         "remove_btn": "🗑️ Remove Excel Sheet (Lock Portal & Wipe Data)",
         "refresh_btn": "🔄 Refresh Data",
         "refresh_success": "✅ Data refreshed successfully!",
@@ -78,36 +68,21 @@ translations = {
         ),
         "remove_success": "🗑️ Excel file removed. Portal locked and data wiped.",
         "input_label": "🆔 National ID (الرقم القومي):",
-        "check_id_btn": "➡️ Next / Verify ID",
-        "password_input_label": "🔒 Password (كلمة المرور):",
-        "new_password_label": (
-            "✨ Create Your Password (أنشئ كلمة المرور الخاصة بك):"
-        ),
-        "confirm_password_label": "✔️ Confirm Password (تأكيد كلمة المرور):",
-        "register_btn": "🚀 Create Password & Login (حفظ كلمة المرور والدخول)",
-        "login_btn": "🔑 Login (تسجيل الدخول)",
-        "logout_btn": "🚪 Logout",
-        "back_btn": "⬅️ Back",
-        "empty_input": "⚠️ Please fill in all required fields.",
-        "pass_mismatch": "❌ Passwords do not match. Please try again.",
+        "login_btn": "🔑 View Dashboard / عرض التفاصيل",
+        "logout_btn": "🚪 Logout / خروج",
+        "empty_input": "⚠️ Please enter your National ID.",
         "error_id": "⚠️ National ID not found. Please check and try again.",
-        "error_login": "❌ Incorrect Password. Please check and try again.",
-        "register_success": (
-            "🎉 Password created & saved automatically! Welcome."
-        ),
         "error_read": "❌ Error reading file: {error}",
         "dashboard_title": "📊 Monthly Salary & Entitlements Details",
         "welcome_banner": "👋 Welcome, {name}!",
         "id_display": "🆔 National ID:",
         "table_col_key": "📋 Field / Column",
         "table_col_val": "💎 Value",
-        "admin_employees_header": "👥 Employee Management & Passwords",
-        "reset_pass_btn": "🔄 Reset Password",
-        "reset_success": "✅ Password successfully reset for {name}.",
+        "admin_employees_header": "👥 Uploaded Employees Data",
     },
     "العربية": {
         "title": "🔐 تفاصيل الرواتب الشهرية لافراد شركة ميراج",
-        "subtitle": "🆔 الرجاء إدخال الرقم القومي للمتابعة.",
+        "subtitle": "🆔 الرجاء إدخال الرقم القومي للانتقال إلى تفاصيل مرتبك.",
         "admin_header": "🛠️ لوحة تحكم المسؤول (Admin)",
         "admin_pass_label": "🔑 أدخل كلمة مرور المسؤول:",
         "admin_pass_btn": "🔓 فتح لوحة المسؤول",
@@ -119,37 +94,24 @@ translations = {
             " المسؤول تفعيل البوابة للسماح بالوصول."
         ),
         "upload_label": "📁 رفع ملف الـ Excel للموظفين (.xlsx أو .xls)",
-        "download_btn": "📥 تحميل قاعدة البيانات (Excel)",
+        "download_btn": "📥 تحميل قاعدة البيانات الحالية (Excel)",
         "remove_btn": "🗑️ حذف ملف الـ Excel (إغلاق البوابة ومسح البيانات)",
         "refresh_btn": "🔄 تحديث البيانات",
         "refresh_success": "✅ تم تحديث البيانات بنجاح!",
         "upload_success": "✅ تم رفع الملف وتحديث قاعدة البيانات بنجاح!",
         "remove_success": "🗑️ تم حذف الملف وإغلاق البوابة ومسح البيانات.",
         "input_label": "🆔 الرقم القومي (National ID):",
-        "check_id_btn": "➡️ التالي / التحقق من الرقم",
-        "password_input_label": "🔒 كلمة المرور (Password):",
-        "new_password_label": "✨ أنشئ كلمة المرور الخاصة بك لأول مرة:",
-        "confirm_password_label": "✔️ تأكيد كلمة المرور:",
-        "register_btn": "🚀 حفظ كلمة المرور وتسجيل الدخول",
-        "login_btn": "🔑 تسجيل الدخول",
+        "login_btn": "🔑 عرض التفاصيل والداشبورد",
         "logout_btn": "🚪 تسجيل الخروج",
-        "back_btn": "⬅️ رجوع",
-        "empty_input": "⚠️ الرجاء ملء جميع الحقول المطلوبة.",
-        "pass_mismatch": "❌ كلمتا المرور غير متطابقتين. يرجى المحاولة مرة أخرى.",
+        "empty_input": "⚠️ الرجاء أدخل الرقم القومي الخاص بك.",
         "error_id": "⚠️ الرقم القومي غير موجود. يرجى التحقق والمحاولة.",
-        "error_login": "❌ كلمة المرور غير صحيحة. يرجى التحقق.",
-        "register_success": (
-            "🎉 تم حفظ كلمة المرور تلقائياً في قاعدة البيانات! أهلاً بك."
-        ),
         "error_read": "❌ خطأ في قراءة الملف: {error}",
         "dashboard_title": "📊 تفاصيل الراتب الشهري والمستحقات المالية",
         "welcome_banner": "👋 أهلاً بك يا {name}!",
         "id_display": "🆔 الرقم القومي:",
         "table_col_key": "📋 الحقل / العمود",
         "table_col_val": "💎 القيمة",
-        "admin_employees_header": "👥 إدارة الموظفين وكلمات المرور",
-        "reset_pass_btn": "🔄 إعادة تعيين كلمة المرور",
-        "reset_success": "✅ تم إعادة تعيين كلمة المرور للموظف {name} بنجاح.",
+        "admin_employees_header": "👥 قائمة الموظفين المسجلين بالملف",
     },
 }
 
@@ -177,8 +139,6 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
       rename_dict[col] = "الرقم القومي"
     elif col in ["اسم الموظف", "الاسم_الكامل"]:
       rename_dict[col] = "الاسم"
-    elif col in ["كلمة المرور", "باسورد", "كلمة_المرور", "pass"]:
-      rename_dict[col] = "Password"
   if rename_dict:
     df = df.rename(columns=rename_dict)
   return df
@@ -197,15 +157,8 @@ def load_excel_df():
     return None
   try:
     df = read_excel_file(SHARED_FILE)
-
-    if "Password" not in df.columns:
-      df["Password"] = ""
-    else:
-      df["Password"] = df["Password"].apply(clean_str)
-
     if "الرقم القومي" in df.columns:
       df["الرقم القومي"] = df["الرقم القومي"].apply(clean_str)
-
     return df
   except Exception:
     for f in [SHARED_FILE, STATUS_FILE]:
@@ -221,9 +174,6 @@ def save_excel_safely(df):
   """Saves updated dataframe back to shared file."""
   if "الرقم القومي" in df.columns:
     df["الرقم القومي"] = df["الرقم القومي"].apply(clean_str)
-  if "Password" in df.columns:
-    df["Password"] = df["Password"].apply(clean_str)
-
   df.to_excel(SHARED_FILE, index=False)
   st.cache_data.clear()
 
@@ -266,45 +216,6 @@ else:
   if uploaded_file is not None:
     try:
       df_upload = read_excel_file(uploaded_file)
-
-      # 1. جلب كلمات المرور القديمة المخزنة سابقاً
-      existing_passwords = {}
-      if os.path.exists(SHARED_FILE):
-        df_old = load_excel_df()
-        if (
-            df_old is not None
-            and "الرقم القومي" in df_old.columns
-            and "Password" in df_old.columns
-        ):
-          for _, row in df_old.iterrows():
-            nid = clean_str(row["الرقم القومي"])
-            pwd = clean_str(row["Password"])
-            if pwd and pwd.lower() not in ["nan", "none"]:
-              existing_passwords[nid] = pwd
-
-      # 2. تحديث قائمة الباسوردات بناءً على الشيت المرفوع
-      pass_col = []
-      has_uploaded_pass = "Password" in df_upload.columns
-
-      for _, row in df_upload.iterrows():
-        nid = clean_str(row.get("الرقم القومي", ""))
-        uploaded_pwd = (
-            clean_str(row.get("Password", "")) if has_uploaded_pass else ""
-        )
-
-        # إذا الشيت المرفوع يحتوي على قيمة صريحة للموظف (سواء باسورد أو فارغ)
-        if has_uploaded_pass:
-          if uploaded_pwd and uploaded_pwd.lower() not in ["nan", "none"]:
-            pass_col.append(uploaded_pwd)
-          else:
-            # إذا ترك المحاسب الخانة فارغة تماماً في الشيت المرفوع، يتم مسح الباسورد القديم
-            pass_col.append("")
-        else:
-          # إذا لم يحتوي الشيت المرفوع اصلاً على عمود Password، يتم الاحتفاظ بالقديم إن وجد
-          pass_col.append(existing_passwords.get(nid, ""))
-
-      df_upload["Password"] = pass_col
-
       save_excel_safely(df_upload)
       set_portal_status(True)
 
@@ -319,39 +230,17 @@ else:
     st.sidebar.subheader(t["admin_employees_header"])
     df_admin = load_excel_df()
     if df_admin is not None:
-      for idx, row in df_admin.iterrows():
-        name = row.get("الاسم", f"Employee {idx}")
-        nid = clean_str(row.get("الرقم القومي", ""))
-        current_pwd = clean_str(row.get("Password", ""))
-        has_pass = (
-            bool(current_pwd) and current_pwd.lower() not in ["nan", "none"]
-        )
-        status_text = "🔒 Registered" if has_pass else "⏳ Not Registered"
-
-        with st.sidebar.expander(f"👤 {name} ({status_text})"):
-          st.write(f"🆔 ID: `{nid}`")
-          if has_pass:
-            st.write(f"🔑 Password: `{current_pwd}`")
-            if st.button(t["reset_pass_btn"], key=f"reset_{nid}_{idx}"):
-              df_admin.at[idx, "Password"] = ""
-              save_excel_safely(df_admin)
-              st.success(t["reset_success"].format(name=name))
-              st.rerun()
-          else:
-            st.info("ℹ️ لم يتم تحديد كلمة مرور لهذا الموظف بعد.")
-
-      st.sidebar.markdown("---")
-      df_export = df_admin.copy()
+      st.sidebar.write(f"📊 إجمالي الموظفين: `{len(df_admin)}`")
 
       output = io.BytesIO()
       with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_export.to_excel(writer, index=False)
+        df_admin.to_excel(writer, index=False)
       excel_bytes = output.getvalue()
 
       st.sidebar.download_button(
           label=t["download_btn"],
           data=excel_bytes,
-          file_name="mirage_payroll_database_with_passwords.xlsx",
+          file_name="mirage_payroll_database.xlsx",
           mime=(
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           ),
@@ -403,7 +292,7 @@ if not is_portal_open():
 
 
 # ====================================================================
-# EMPLOYEE PORTAL VIEW
+# EMPLOYEE PORTAL VIEW (Direct access via National ID only)
 # ====================================================================
 
 if st.session_state.get("logged_in_user"):
@@ -422,7 +311,6 @@ if st.session_state.get("logged_in_user"):
     st.session_state.logged_in_user = None
     st.session_state.logged_in_id = None
     st.session_state.employee_row_data = None
-    st.session_state.checked_id = None
     st.rerun()
 
   st.success(t["welcome_banner"].format(name=st.session_state.logged_in_user))
@@ -466,7 +354,6 @@ if st.session_state.get("logged_in_user"):
     st.session_state.logged_in_user = None
     st.session_state.logged_in_id = None
     st.session_state.employee_row_data = None
-    st.session_state.checked_id = None
     st.rerun()
 
 else:
@@ -476,102 +363,26 @@ else:
     if df is None:
       st.error(t["error_read"].format(error="Could not load data."))
     else:
-      if st.session_state.get("checked_id") is None:
+      with st.form(key="direct_login_form"):
         national_id_input = st.text_input(
             t["input_label"], key="national_id_field"
         )
-        submit_id = st.button(t["check_id_btn"])
+        submit_login = st.form_submit_button(t["login_btn"])
 
-        if submit_id:
+        if submit_login:
           clean_input_id = clean_str(national_id_input)
           if not clean_input_id:
             st.warning(t["empty_input"])
           else:
             matched = df[df["الرقم القومي"].apply(clean_str) == clean_input_id]
             if not matched.empty:
-              st.session_state.checked_id = clean_input_id
+              emp_name = matched.iloc[0].get("الاسم", "الموظف")
+              st.session_state.logged_in_user = emp_name
+              st.session_state.logged_in_id = clean_input_id
+              st.session_state.employee_row_data = matched.iloc[0].to_dict()
               st.rerun()
             else:
               st.error(t["error_id"])
-      else:
-        national_id_input = st.session_state.checked_id
-        df_current = load_excel_df()
-        matched = df_current[
-            df_current["الرقم القومي"].apply(clean_str)
-            == clean_str(national_id_input)
-        ]
-
-        if not matched.empty:
-          idx = matched.index[0]
-          current_pass = clean_str(matched.loc[idx, "Password"])
-          emp_name = matched.loc[idx, "الاسم"]
-
-          st.info(f"👤 **{emp_name}** (ID: `{national_id_input}`)")
-
-          if st.button(t["back_btn"]):
-            st.session_state.checked_id = None
-            st.rerun()
-
-          # التحقق مما إذا كانت الخانة تحوي كلمة مرور حقيقية
-          has_valid_password = bool(
-              current_pass and current_pass.lower() not in ["nan", "none"]
-          )
-
-          if has_valid_password:
-            # الخيار 1: توجد كلمة مرور في الشيت (كتبها المحاسب أو أنشأها الموظف سابقاً) 👈 يطلب كلمة المرور مباشرةً
-            password_input = st.text_input(
-                t["password_input_label"],
-                type="password",
-                key="password_input_field",
-            )
-            submit_login = st.button(t["login_btn"])
-
-            if submit_login:
-              if not password_input:
-                st.warning(t["empty_input"])
-              elif hash_password(password_input) == current_pass:
-                st.session_state.logged_in_user = emp_name
-                st.session_state.logged_in_id = national_id_input
-                st.session_state.employee_row_data = matched.loc[idx].to_dict()
-                st.session_state.checked_id = None
-                st.rerun()
-              else:
-                st.error(t["error_login"])
-          else:
-            # الخيار 2: الخانة فارغة 👈 يطلب من الموظف إنشاء كلمة مرور جديدة
-            st.warning(
-                "✨ هذه زيارتك الأولى أو تم إعادة تعيين حسابك! يرجى إنشاء كلمة"
-                " مرور خاصة بك."
-            )
-            new_pass = st.text_input(
-                t["new_password_label"],
-                type="password",
-                key="new_pass_field",
-            )
-            confirm_pass = st.text_input(
-                t["confirm_password_label"],
-                type="password",
-                key="new_pass_field_confirm",
-            )
-            submit_register = st.button(t["register_btn"])
-
-            if submit_register:
-              if not new_pass or not confirm_pass:
-                st.warning(t["empty_input"])
-              elif new_pass != confirm_pass:
-                st.error(t["pass_mismatch"])
-              else:
-                df_current.at[idx, "Password"] = hash_password(new_pass)
-                save_excel_safely(df_current)
-
-                st.session_state.logged_in_user = emp_name
-                st.session_state.logged_in_id = national_id_input
-                st.session_state.employee_row_data = (
-                    df_current.loc[idx].to_dict()
-                )
-                st.session_state.checked_id = None
-                st.success(t["register_success"])
-                st.rerun()
 
   except Exception as e:
     st.error(t["error_read"].format(error=e))
