@@ -17,7 +17,7 @@ st.set_page_config(page_title="Mirage Employee Portal", page_icon="🔐", layout
 SHARED_FILE = "shared_payroll.xlsx"
 STATUS_FILE = "portal_status.txt" 
 ONLINE_FILE = "online_users.json"
-DEVICES_FILE = "device_bindings.json"  # ملف ربط الأجهزة بالأرقام القومية
+DEVICES_FILE = "device_bindings.json"
 ADMIN_PASSWORD = "Mirage_Payroll_Secured_2026!#$xK9"
 
 # ====================================================================
@@ -42,7 +42,6 @@ if "device_uuid" not in st.session_state:
 # DEVICE IDENTIFIER (JS LOCALSTORAGE INJECTOR)
 # ====================================================================
 def device_id_fetcher():
-    """حقن كود جافاسكريبت لاستخراج أو إنشاء معرف فريد للجهاز وتخزينه في LocalStorage"""
     query_params = st.query_params
     device_id_param = query_params.get("device_id")
     
@@ -67,7 +66,6 @@ def device_id_fetcher():
         """
         components.html(js_code, height=0, width=0)
 
-# استدعاء جالب معرف الجهاز
 device_id_fetcher()
 
 # ====================================================================
@@ -87,26 +85,20 @@ def save_device_bindings(bindings: dict):
         json.dump(bindings, f, ensure_ascii=False, indent=2)
 
 def is_device_allowed(device_id: str, national_id: str) -> tuple[bool, str]:
-    """
-    تتحقق مما إذا كان الجهاز مسموحاً له باستخدام هذا الرقم القومي.
-    ترجع (True, "") إذا كان مسموحاً، أو (False, "reason") إذا كان محظوراً.
-    """
     if not device_id:
-        return True, ""  # في حال لم يكتمل التحميل بعد
+        return True, ""
         
     bindings = load_device_bindings()
     clean_nid = str(national_id).strip()
     
-    # 1. هل الجهاز مرتبط برقم قومي آخر؟
     for bound_nid, bound_dev in bindings.items():
         if bound_dev == device_id and bound_nid != clean_nid:
             return False, f"هذا الجهاز محظور! تم استخدامه سابقاً مع الرقم القومي ({bound_nid}). لا يمكنك استخدام أكثر من رقم قومي على نفس الجهاز."
 
-    # 2. هل الرقم القومي مرتبط بجهاز آخر؟
     if clean_nid in bindings:
         bound_dev = bindings[clean_nid]
         if bound_dev != device_id:
-            return False, "هذا الحساب مرتبك بجهاز آخر بالفعل. لا يمكنك تسجيل الدخول إلا من جهازك المعتمد."
+            return False, "هذا الحساب مرتبط بجهاز آخر بالفعل. لا يمكنك تسجيل الدخول إلا من جهازك المعتمد."
 
     return True, ""
 
@@ -137,7 +129,6 @@ if query_params.get("action") == "auto_logout":
     st.session_state.employee_row_data = None
     st.session_state.checked_id = None
     
-    # احتفظ بالـ device_id في الرابط إن وجد
     dev_id = query_params.get("device_id")
     st.query_params.clear()
     if dev_id:
@@ -146,7 +137,6 @@ if query_params.get("action") == "auto_logout":
     st.warning("⏱️ تم تسجيل الخروج تلقائياً لعدم النشاط لمدة 5 دقائق.")
 
 def auto_logout_listener(timeout_minutes=5):
-    """تسجيل خروج تلقائي بعد مرور عدد معين من الدقائق بدون حركة"""
     timeout_ms = timeout_minutes * 60 * 1000
     dev_id = st.session_state.get("device_uuid", "")
     js_code = f"""
@@ -250,10 +240,7 @@ translations = {
         "admin_access_denied": "❌ Incorrect Admin Password.",
         "admin_panel_unlocked": "✨ Admin Panel Unlocked Successfully!",
         "portal_master_toggle": "🔓 Enable Employee Portal Access",
-        "portal_locked_msg": (
-            "⚠️ PORTAL LOCKED: Employee login is completely disabled. The "
-            "Administrator must be logged in and unlock the portal to grant access."
-        ),
+        "portal_locked_msg": "⚠️ PORTAL LOCKED: Employee login is completely disabled.",
         "upload_label": "📁 Upload Employees Excel File (.xlsx or .xls)",
         "download_btn": "📥 Download Updated Database (Secure)",
         "remove_btn": "🗑️ Remove Excel Sheet (Lock Portal & Wipe Data)",
@@ -299,10 +286,7 @@ translations = {
         "admin_access_denied": "❌ كلمة مرور المسؤول غير صحيحة.",
         "admin_panel_unlocked": "✨ تم فتح لوحة المسؤول بنجاح!",
         "portal_master_toggle": "🔓 تفعيل دخول الموظفين للبوابة",
-        "portal_locked_msg": (
-            "⚠️ البوابة مغلقة: تسجيل دخول الموظفين معطل بالكامل. يجب أن يكون المسؤول "
-            "مسجلاً للدخول ويفعل البوابة للسماح بالوصول."
-        ),
+        "portal_locked_msg": "⚠️ البوابة مغلقة: تسجيل دخول الموظفين معطل بالكامل.",
         "upload_label": "📁 رفع ملف الـ Excel للموظفين (.xlsx أو .xls)",
         "download_btn": "📥 تحميل قاعدة البيانات (Excel الآمن)",
         "remove_btn": "🗑️ حذف ملف الـ Excel (إغلاق البوابة ومسح البيانات)",
@@ -457,21 +441,12 @@ else:
             df_upload = read_excel_file(uploaded_file)
             df_upload.columns = df_upload.columns.str.strip()
 
-            existing_passwords = {}
-            if os.path.exists(SHARED_FILE):
-                df_old = load_excel_df()
-                if df_old is not None and "الرقم القومي" in df_old.columns and "Password" in df_old.columns:
-                    for _, row in df_old.iterrows():
-                        nid = str(row["الرقم القومي"]).strip().replace(".0", "")
-                        pwd = str(row["Password"]).strip()
-                        if pwd and pwd.lower() not in ["nan", "none", ""]:
-                            existing_passwords[nid] = pwd
-
-            pass_col = []
-            for _, row in df_upload.iterrows():
-                nid = str(row.get("الرقم القومي", "")).strip().replace(".0", "")
-                pass_col.append(existing_passwords.get(nid, ""))
-            df_upload["Password"] = pass_col
+            # التأكد من معالجة عمود الباسورد إن وجد في الشيت المرفوع
+            if "Password" not in df_upload.columns:
+                df_upload["Password"] = ""
+            else:
+                df_upload["Password"] = df_upload["Password"].fillna("").astype(str).str.strip()
+                df_upload.loc[df_upload["Password"].isin(["nan", "None", ""]), "Password"] = ""
 
             save_excel_safely(df_upload)
             set_portal_status(True)
@@ -598,10 +573,7 @@ if not is_portal_open():
 # EMPLOYEE PORTAL VIEW
 # ====================================================================
 if st.session_state.get("logged_in_user"):
-    # تفعيل مؤقت الخمول
     auto_logout_listener(timeout_minutes=5)
-    
-    # تحديث مؤشر الاتصال
     update_online_status(st.session_state.get("logged_in_id"), True)
 
     df_verify = load_excel_df()
@@ -678,7 +650,7 @@ else:
                     else:
                         clean_input_id = national_id_input.strip().replace(".0", "").replace("\t", "")
                         
-                        # --- فحص حظر الجهاز قبل متابعة الخطوات ---
+                        # فحص حظر الجهاز
                         current_device = st.session_state.get("device_uuid")
                         allowed, reason = is_device_allowed(current_device, clean_input_id)
                         
@@ -707,8 +679,9 @@ else:
                         st.session_state.checked_id = None
                         st.rerun()
 
-                    if current_pass == "" or current_pass.lower() == "nan":
-                        st.info("✨ First time here? Please create a secure, unique password for your account.")
+                    # حالة الموظف الذي لا يملك كلمة مرور (تظهر له واجهة الإنشاء)
+                    if current_pass == "" or current_pass.lower() in ["nan", "none"]:
+                        st.info("✨ لم يتم تعيين كلمة مرور لك بعد. يرجى إنشاء كلمة مرور جديدة للحساب.")
                         new_pass = st.text_input(t["new_password_label"], type="password", key="new_pass_field")
                         confirm_pass = st.text_input(t["confirm_password_label"], type="password", key="new_pass_field_confirm")
                         submit_register = st.button(t["register_btn"])
@@ -723,7 +696,7 @@ else:
                                 if new_pass.strip() in existing_passes:
                                     st.error(t["pass_taken"])
                                 else:
-                                    # ربط الجهاز بالرقم القومي عند التسجيل الأول
+                                    # ربط الجهاز بالرقم القومي عند إنشاء كلمة المرور
                                     current_device = st.session_state.get("device_uuid")
                                     bind_device_to_id(current_device, national_id_input)
                                     
@@ -737,6 +710,8 @@ else:
                                     update_online_status(national_id_input, True)
                                     st.success(t["register_success"])
                                     st.rerun()
+                    
+                    # حالة الموظف الذي تمت إضافة كلمة مرور له مسبقاً (في الاكسيل أو سابقاً)
                     else:
                         password_input = st.text_input(t["password_input_label"], type="password", key="password_input_field")
                         submit_login = st.button(t["login_btn"])
@@ -745,7 +720,7 @@ else:
                             if not password_input:
                                 st.warning(t["empty_input"])
                             elif password_input.strip() == current_pass:
-                                # ربط الجهاز بالرقم القومي عند تسجيل الدخول الناجح
+                                # ربط الجهاز بالرقم القومي عند الدخول بكلمة المرور المسجلة
                                 current_device = st.session_state.get("device_uuid")
                                 bind_device_to_id(current_device, national_id_input)
 
