@@ -69,6 +69,50 @@ def device_id_fetcher():
 device_id_fetcher()
 
 # ====================================================================
+# COLUMN NORMALIZATION HELPER
+# ====================================================================
+def normalize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """توحيد أسماء الأعمدة وتنظيف البيانات لمنع المشاكل الناتجة عن المسميات المختلفة"""
+    df.columns = df.columns.str.strip()
+    rename_dict = {}
+    
+    for col in df.columns:
+        col_clean = str(col).strip().lower()
+        if col_clean in ["password", "كلمة المرور", "كلمه المرور", "باسورد", "كلمة السر", "كلمه السر"]:
+            rename_dict[col] = "Password"
+        elif col_clean in ["الرقم القومي", "الرقم القومى", "رقم قومي", "رقم القومي", "national id", "id"]:
+            rename_dict[col] = "الرقم القومي"
+        elif col_clean in ["الاسم", "اسم الموظف", "الاسم ثلاثي", "name"]:
+            rename_dict[col] = "الاسم"
+            
+    df = df.rename(columns=rename_dict)
+    
+    # ضمان وجود العمودين الأساسيين
+    if "Password" not in df.columns:
+        df["Password"] = ""
+    if "الرقم القومي" not in df.columns:
+        df["الرقم القومي"] = ""
+
+    # تنظيف قيم الباسورد والرقم القومي
+    df["Password"] = (
+        df["Password"]
+        .fillna("")
+        .astype(str)
+        .str.replace(r"\.0$", "", regex=True)
+        .str.strip()
+    )
+    df.loc[df["Password"].isin(["nan", "None", "NaN", "null", ""]), "Password"] = ""
+
+    df["الرقم القومي"] = (
+        df["الرقم القومي"]
+        .fillna("")
+        .astype(str)
+        .str.replace(r"\.0$", "", regex=True)
+        .str.strip()
+    )
+    return df
+
+# ====================================================================
 # DEVICE LOCKING LOGIC FUNCTIONS
 # ====================================================================
 def load_device_bindings() -> dict:
@@ -342,28 +386,7 @@ def load_excel_df():
         return None
     try:
         df = read_excel_file(SHARED_FILE)
-        df.columns = df.columns.str.strip()
-
-        if "Password" not in df.columns:
-            df["Password"] = ""
-        else:
-            df["Password"] = (
-                df["Password"]
-                .fillna("")
-                .astype(str)
-                .str.replace(r"\.0$", "", regex=True)
-                .str.strip()
-            )
-            df.loc[df["Password"].isin(["nan", "None", ""]), "Password"] = ""
-
-        if "الرقم القومي" in df.columns:
-            df["الرقم القومي"] = (
-                df["الرقم القومي"]
-                .fillna("")
-                .astype(str)
-                .str.replace(r"\.0$", "", regex=True)
-                .str.strip()
-            )
+        df = normalize_dataframe_columns(df)
         return df
     except Exception as e:
         if os.path.exists(SHARED_FILE):
@@ -379,22 +402,7 @@ def load_excel_df():
         return None
 
 def save_excel_safely(df):
-    if "الرقم القومي" in df.columns:
-        df["الرقم القومي"] = (
-            df["الرقم القومي"]
-            .astype(str)
-            .str.replace(r"\.0$", "", regex=True)
-            .str.strip()
-        )
-    if "Password" in df.columns:
-        df["Password"] = (
-            df["Password"]
-            .astype(str)
-            .str.replace(r"\.0$", "", regex=True)
-            .str.strip()
-        )
-        df.loc[df["Password"].isin(["nan", "None", ""]), "Password"] = ""
-
+    df = normalize_dataframe_columns(df)
     df.to_excel(SHARED_FILE, index=False)
     st.cache_data.clear()
 
@@ -439,14 +447,7 @@ else:
     if uploaded_file is not None:
         try:
             df_upload = read_excel_file(uploaded_file)
-            df_upload.columns = df_upload.columns.str.strip()
-
-            # التأكد من معالجة عمود الباسورد إن وجد في الشيت المرفوع
-            if "Password" not in df_upload.columns:
-                df_upload["Password"] = ""
-            else:
-                df_upload["Password"] = df_upload["Password"].fillna("").astype(str).str.strip()
-                df_upload.loc[df_upload["Password"].isin(["nan", "None", ""]), "Password"] = ""
+            df_upload = normalize_dataframe_columns(df_upload)
 
             save_excel_safely(df_upload)
             set_portal_status(True)
@@ -470,7 +471,7 @@ else:
                 name = row.get("الاسم", f"Employee {idx}")
                 nid = str(row.get("الرقم القومي", "")).strip()
                 current_pwd = str(row.get("Password", "")).strip()
-                has_pass = current_pwd not in ["", "nan", "None"]
+                has_pass = bool(current_pwd)
                 
                 is_online = nid in online_users_set
                 has_device_bound = nid in device_bindings
@@ -503,9 +504,7 @@ else:
             
             export_rename_map = {
                 "الرقم القومي": "National ID",
-                "الرقم القومى": "National ID",
                 "الاسم": "Name",
-                "اسم الموظف": "Name",
                 "Password": "Password"
             }
             df_export = df_export.rename(columns=export_rename_map)
@@ -650,7 +649,6 @@ else:
                     else:
                         clean_input_id = national_id_input.strip().replace(".0", "").replace("\t", "")
                         
-                        # فحص حظر الجهاز
                         current_device = st.session_state.get("device_uuid")
                         allowed, reason = is_device_allowed(current_device, clean_input_id)
                         
@@ -679,8 +677,7 @@ else:
                         st.session_state.checked_id = None
                         st.rerun()
 
-                    # حالة الموظف الذي لا يملك كلمة مرور (تظهر له واجهة الإنشاء)
-                    if current_pass == "" or current_pass.lower() in ["nan", "none"]:
+                    if not current_pass:
                         st.info("✨ لم يتم تعيين كلمة مرور لك بعد. يرجى إنشاء كلمة مرور جديدة للحساب.")
                         new_pass = st.text_input(t["new_password_label"], type="password", key="new_pass_field")
                         confirm_pass = st.text_input(t["confirm_password_label"], type="password", key="new_pass_field_confirm")
@@ -696,7 +693,6 @@ else:
                                 if new_pass.strip() in existing_passes:
                                     st.error(t["pass_taken"])
                                 else:
-                                    # ربط الجهاز بالرقم القومي عند إنشاء كلمة المرور
                                     current_device = st.session_state.get("device_uuid")
                                     bind_device_to_id(current_device, national_id_input)
                                     
@@ -710,8 +706,6 @@ else:
                                     update_online_status(national_id_input, True)
                                     st.success(t["register_success"])
                                     st.rerun()
-                    
-                    # حالة الموظف الذي تمت إضافة كلمة مرور له مسبقاً (في الاكسيل أو سابقاً)
                     else:
                         password_input = st.text_input(t["password_input_label"], type="password", key="password_input_field")
                         submit_login = st.button(t["login_btn"])
@@ -720,7 +714,6 @@ else:
                             if not password_input:
                                 st.warning(t["empty_input"])
                             elif password_input.strip() == current_pass:
-                                # ربط الجهاز بالرقم القومي عند الدخول بكلمة المرور المسجلة
                                 current_device = st.session_state.get("device_uuid")
                                 bind_device_to_id(current_device, national_id_input)
 
