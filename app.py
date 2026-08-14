@@ -4,17 +4,24 @@ import json
 import time
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
-# Page configuration
+# ====================================================================
+# PAGE CONFIGURATION
+# ====================================================================
 st.set_page_config(page_title="Mirage Employee Portal", page_icon="🔐", layout="wide")
 
-# --- GLOBAL SYSTEM FILES ---
+# ====================================================================
+# GLOBAL CONSTANTS & FILE PATHS
+# ====================================================================
 SHARED_FILE = "shared_payroll.xlsx"
 STATUS_FILE = "portal_status.txt" 
-ONLINE_FILE = "online_users.json"  # ملف تتبع حالة الاتصال
+ONLINE_FILE = "online_users.json"
 ADMIN_PASSWORD = "Mirage_Payroll_Secured_2026!#$xK9"
 
-# --- INITIALIZE SESSION STATES ---
+# ====================================================================
+# INITIALIZE SESSION STATES
+# ====================================================================
 if "admin_logged_in" not in st.session_state:
     st.session_state.admin_logged_in = False
 if "logged_in_user" not in st.session_state:
@@ -28,9 +35,67 @@ if "checked_id" not in st.session_state:
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
-# --- ONLINE / OFFLINE TRACKING LOGIC ---
+# ====================================================================
+# AUTO LOGOUT LOGIC & COMPONENT
+# ====================================================================
+# 1. التحقق مما إذا كان تم التوجيه لتسجيل الخروج بسبب الخمول
+query_params = st.query_params
+if query_params.get("action") == "auto_logout":
+    if st.session_state.get("logged_in_id"):
+        # إزالة الموظف من قائمة المتصلين
+        if os.path.exists(ONLINE_FILE):
+            try:
+                with open(ONLINE_FILE, "r", encoding="utf-8") as f:
+                    s_data = json.load(f)
+                s_data.pop(str(st.session_state.logged_in_id).strip(), None)
+                with open(ONLINE_FILE, "w", encoding="utf-8") as f:
+                    json.dump(s_data, f)
+            except Exception:
+                pass
+    st.session_state.logged_in_user = None
+    st.session_state.logged_in_id = None
+    st.session_state.employee_row_data = None
+    st.session_state.checked_id = None
+    st.query_params.clear()
+    st.warning("⏱️ تم تسجيل الخروج تلقائياً لعدم النشاط لمدة 5 دقائق.")
+
+# 2. مكون الجافاسكريبت لرصد عدم النشاط (Inactivity Listener)
+def auto_logout_listener(timeout_minutes=5):
+    """تسجيل خروج تلقائي بعد مرور عدد معين من الدقائق بدون حركة"""
+    timeout_ms = timeout_minutes * 60 * 1000
+    js_code = f"""
+    <script>
+    (function() {{
+        let timeout;
+        const TIMEOUT_MS = {timeout_ms};
+
+        function resetTimer() {{
+            clearTimeout(timeout);
+            timeout = setTimeout(logout, TIMEOUT_MS);
+        }}
+
+        function logout() {{
+            const currentUrl = window.parent.location.href.split('?')[0];
+            window.parent.location.href = currentUrl + '?action=auto_logout';
+        }}
+
+        // أحداث الخمول المتوقعة
+        window.onload = resetTimer;
+        document.onmousemove = resetTimer;
+        document.onkeypress = resetTimer;
+        document.onclick = resetTimer;
+        document.onscroll = resetTimer;
+        
+        resetTimer();
+    }})();
+    </script>
+    """
+    components.html(js_code, height=0, width=0)
+
+# ====================================================================
+# ONLINE / OFFLINE TRACKING LOGIC
+# ====================================================================
 def update_online_status(national_id: str, is_online: bool):
-    """تحديث حالة الموظف (أونلاين / أوفلاين) في ملف مشترك."""
     if not national_id:
         return
     status_data = {}
@@ -43,7 +108,7 @@ def update_online_status(national_id: str, is_online: bool):
     
     clean_id = str(national_id).strip()
     if is_online:
-        status_data[clean_id] = time.time()  # تسجيل وقت التواجد
+        status_data[clean_id] = time.time()
     else:
         status_data.pop(clean_id, None)
 
@@ -51,14 +116,12 @@ def update_online_status(national_id: str, is_online: bool):
         json.dump(status_data, f)
 
 def get_online_users(timeout_seconds=300) -> set:
-    """إرجاع الموظفين المتواجدين حالياً (خلال آخر 5 دقائق)."""
     if not os.path.exists(ONLINE_FILE):
         return set()
     try:
         with open(ONLINE_FILE, "r", encoding="utf-8") as f:
             status_data = json.load(f)
         current_time = time.time()
-        # تصفية المستخدمين النشطين خلال المهلة
         active_users = {
             nid for nid, last_seen in status_data.items() 
             if current_time - last_seen < timeout_seconds
@@ -67,9 +130,10 @@ def get_online_users(timeout_seconds=300) -> set:
     except Exception:
         return set()
 
-# --- CORE LOGIC: PORTAL STATUS GATEKEEPER ---
+# ====================================================================
+# CORE LOGIC: PORTAL STATUS GATEKEEPER
+# ====================================================================
 def is_portal_open():
-    """Returns True ONLY if shared file exists and status says OPEN."""
     if not os.path.exists(SHARED_FILE):
         return False
     if not os.path.exists(STATUS_FILE):
@@ -84,7 +148,9 @@ def set_portal_status(is_open: bool):
     with open(STATUS_FILE, "w") as f:
         f.write("OPEN" if is_open else "CLOSED")
 
-# --- Language Translations Dictionary with Icons ---
+# ====================================================================
+# TRANSLATIONS DICTIONARY
+# ====================================================================
 translations = {
     "English": {
         "title": "🔐 تفاصيل الرواتب الشهرية لافراد شركة ميراج",
@@ -182,11 +248,12 @@ translations = {
     },
 }
 
-# --- Language Switcher in Sidebar ---
 selected_lang = st.sidebar.selectbox("🌐 Choose Language / اللغة", ["العربية", "English"])
 t = translations[selected_lang]
 
-# --- Helper Functions ---
+# ====================================================================
+# EXCEL HELPER FUNCTIONS
+# ====================================================================
 def read_excel_file(file_path_or_buffer):
     try:
         return pd.read_excel(file_path_or_buffer, dtype=str)
@@ -254,7 +321,9 @@ def save_excel_safely(df):
     df.to_excel(SHARED_FILE, index=False)
     st.cache_data.clear()
 
-# --- ADMIN SECTION (Sidebar) ---
+# ====================================================================
+# ADMIN SECTION (SIDEBAR)
+# ====================================================================
 st.sidebar.markdown("---")
 st.sidebar.header(t["admin_header"])
 
@@ -284,7 +353,6 @@ else:
     else:
         st.sidebar.warning("⚠️ Upload an Excel sheet to enable portal access.")
 
-    # File uploader
     uploaded_file = st.sidebar.file_uploader(
         t["upload_label"], 
         type=["xlsx", "xls"], 
@@ -326,7 +394,6 @@ else:
         st.sidebar.subheader(t["admin_employees_header"])
         df_admin = load_excel_df()
         
-        # جلب قائمة الموظفين الأونلاين حالياً
         online_users_set = get_online_users()
 
         if df_admin is not None:
@@ -336,7 +403,6 @@ else:
                 current_pwd = str(row.get("Password", "")).strip()
                 has_pass = current_pwd not in ["", "nan", "None"]
                 
-                # إظهار مؤشر حالة الاتصال (🟢 أونلاين / ⚪ أوفلاين)
                 is_online = nid in online_users_set
                 presence_badge = t["online_status"] if is_online else t["offline_status"]
                 reg_status = "🔒" if has_pass else "⏳"
@@ -393,8 +459,9 @@ else:
         st.cache_data.clear()
         st.rerun()
 
-
-# --- MAIN PAGE LAYOUT ---
+# ====================================================================
+# MAIN PAGE LAYOUT
+# ====================================================================
 col_title, col_refresh = st.columns([4, 1])
 with col_title:
     st.title(t["title"])
@@ -403,7 +470,6 @@ with col_refresh:
     if st.button(t["refresh_btn"]):
         st.cache_data.clear()
         if is_portal_open() and st.session_state.get("logged_in_id"):
-            # تجديد شارة التواجد عند التحديث
             update_online_status(st.session_state.logged_in_id, True)
             df_refresh = load_excel_df()
             if df_refresh is not None:
@@ -422,13 +488,14 @@ if not is_portal_open():
     st.error(t["portal_locked_msg"])
     st.stop()  
 
-
 # ====================================================================
 # EMPLOYEE PORTAL VIEW
 # ====================================================================
-
 if st.session_state.get("logged_in_user"):
-    # تحديث نبض الاتصال للموظف المسجل
+    # تفعيل مؤقت الخمول لمدة 5 دقائق لإنهاء الجلسة تلقائياً
+    auto_logout_listener(timeout_minutes=5)
+    
+    # تحديث مؤشر الاتصال للموظف
     update_online_status(st.session_state.get("logged_in_id"), True)
 
     df_verify = load_excel_df()
@@ -481,7 +548,6 @@ if st.session_state.get("logged_in_user"):
 
     st.markdown("---")
     if st.button(t["logout_btn"]):
-        # تحويل الحالة إلى offline عند الخروج
         update_online_status(st.session_state.get("logged_in_id"), False)
         st.session_state.logged_in_user = None
         st.session_state.logged_in_id = None
@@ -550,9 +616,7 @@ else:
                                     st.session_state.employee_row_data = df_current.loc[idx].to_dict()
                                     st.session_state.checked_id = None
                                     
-                                    # تحديث الحالة إلى أونلاين عند أول تسجيل
                                     update_online_status(national_id_input, True)
-                                    
                                     st.success(t["register_success"])
                                     st.rerun()
                     else:
@@ -568,9 +632,7 @@ else:
                                 st.session_state.employee_row_data = matched.loc[idx].to_dict()
                                 st.session_state.checked_id = None
                                 
-                                # تحديث الحالة إلى أونلاين عند تسجيل الدخول
                                 update_online_status(national_id_input, True)
-                                
                                 st.rerun()
                             else:
                                 st.error(t["error_login"])
