@@ -17,6 +17,7 @@ st.set_page_config(page_title="Mirage Employee Portal", page_icon="🔐", layout
 SHARED_FILE = "shared_payroll.xlsx"
 STATUS_FILE = "portal_status.txt" 
 ONLINE_FILE = "online_users.json"
+DEVICES_FILE = "device_bindings.json"  # ملف ربط الأجهزة بالأرقام القومية
 ADMIN_PASSWORD = "Mirage_Payroll_Secured_2026!#$xK9"
 
 # ====================================================================
@@ -34,15 +35,94 @@ if "checked_id" not in st.session_state:
     st.session_state.checked_id = None
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
+if "device_uuid" not in st.session_state:
+    st.session_state.device_uuid = None
+
+# ====================================================================
+# DEVICE IDENTIFIER (JS LOCALSTORAGE INJECTOR)
+# ====================================================================
+def device_id_fetcher():
+    """حقن كود جافاسكريبت لاستخراج أو إنشاء معرف فريد للجهاز وتخزينه في LocalStorage"""
+    query_params = st.query_params
+    device_id_param = query_params.get("device_id")
+    
+    if device_id_param:
+        st.session_state.device_uuid = device_id_param
+    else:
+        js_code = """
+        <script>
+        (function() {
+            let deviceId = localStorage.getItem('mirage_device_uuid');
+            if (!deviceId) {
+                deviceId = 'dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+                localStorage.setItem('mirage_device_uuid', deviceId);
+            }
+            const currentUrl = new URL(window.parent.location.href);
+            if (!currentUrl.searchParams.get('device_id')) {
+                currentUrl.searchParams.set('device_id', deviceId);
+                window.parent.location.href = currentUrl.toString();
+            }
+        })();
+        </script>
+        """
+        components.html(js_code, height=0, width=0)
+
+# استدعاء جالب معرف الجهاز
+device_id_fetcher()
+
+# ====================================================================
+# DEVICE LOCKING LOGIC FUNCTIONS
+# ====================================================================
+def load_device_bindings() -> dict:
+    if not os.path.exists(DEVICES_FILE):
+        return {}
+    try:
+        with open(DEVICES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_device_bindings(bindings: dict):
+    with open(DEVICES_FILE, "w", encoding="utf-8") as f:
+        json.dump(bindings, f, ensure_ascii=False, indent=2)
+
+def is_device_allowed(device_id: str, national_id: str) -> tuple[bool, str]:
+    """
+    تتحقق مما إذا كان الجهاز مسموحاً له باستخدام هذا الرقم القومي.
+    ترجع (True, "") إذا كان مسموحاً، أو (False, "reason") إذا كان محظوراً.
+    """
+    if not device_id:
+        return True, ""  # في حال لم يكتمل التحميل بعد
+        
+    bindings = load_device_bindings()
+    clean_nid = str(national_id).strip()
+    
+    # 1. هل الجهاز مرتبط برقم قومي آخر؟
+    for bound_nid, bound_dev in bindings.items():
+        if bound_dev == device_id and bound_nid != clean_nid:
+            return False, f"هذا الجهاز محظور! تم استخدامه سابقاً مع الرقم القومي ({bound_nid}). لا يمكنك استخدام أكثر من رقم قومي على نفس الجهاز."
+
+    # 2. هل الرقم القومي مرتبط بجهاز آخر؟
+    if clean_nid in bindings:
+        bound_dev = bindings[clean_nid]
+        if bound_dev != device_id:
+            return False, "هذا الحساب مرتبك بجهاز آخر بالفعل. لا يمكنك تسجيل الدخول إلا من جهازك المعتمد."
+
+    return True, ""
+
+def bind_device_to_id(device_id: str, national_id: str):
+    if not device_id or not national_id:
+        return
+    bindings = load_device_bindings()
+    bindings[str(national_id).strip()] = device_id
+    save_device_bindings(bindings)
 
 # ====================================================================
 # AUTO LOGOUT LOGIC & COMPONENT
 # ====================================================================
-# 1. التحقق مما إذا كان تم التوجيه لتسجيل الخروج بسبب الخمول
 query_params = st.query_params
 if query_params.get("action") == "auto_logout":
     if st.session_state.get("logged_in_id"):
-        # إزالة الموظف من قائمة المتصلين
         if os.path.exists(ONLINE_FILE):
             try:
                 with open(ONLINE_FILE, "r", encoding="utf-8") as f:
@@ -56,13 +136,19 @@ if query_params.get("action") == "auto_logout":
     st.session_state.logged_in_id = None
     st.session_state.employee_row_data = None
     st.session_state.checked_id = None
+    
+    # احتفظ بالـ device_id في الرابط إن وجد
+    dev_id = query_params.get("device_id")
     st.query_params.clear()
+    if dev_id:
+        st.query_params["device_id"] = dev_id
+        
     st.warning("⏱️ تم تسجيل الخروج تلقائياً لعدم النشاط لمدة 5 دقائق.")
 
-# 2. مكون الجافاسكريبت لرصد عدم النشاط (Inactivity Listener)
 def auto_logout_listener(timeout_minutes=5):
     """تسجيل خروج تلقائي بعد مرور عدد معين من الدقائق بدون حركة"""
     timeout_ms = timeout_minutes * 60 * 1000
+    dev_id = st.session_state.get("device_uuid", "")
     js_code = f"""
     <script>
     (function() {{
@@ -75,11 +161,14 @@ def auto_logout_listener(timeout_minutes=5):
         }}
 
         function logout() {{
-            const currentUrl = window.parent.location.href.split('?')[0];
-            window.parent.location.href = currentUrl + '?action=auto_logout';
+            const currentUrl = new URL(window.parent.location.href.split('?')[0]);
+            currentUrl.searchParams.set('action', 'auto_logout');
+            if ("{dev_id}") {{
+                currentUrl.searchParams.set('device_id', "{dev_id}");
+            }}
+            window.parent.location.href = currentUrl.toString();
         }}
 
-        // أحداث الخمول المتوقعة
         window.onload = resetTimer;
         document.onmousemove = resetTimer;
         document.onkeypress = resetTimer;
@@ -198,6 +287,8 @@ translations = {
         "reset_success": "✅ Password successfully reset for {name}.",
         "online_status": "🟢 Online",
         "offline_status": "⚪ Offline",
+        "unbind_device_btn": "🔓 Reset Device Lock",
+        "unbind_success": "✅ Device lock cleared for {name}.",
     },
     "العربية": {
         "title": "🔐 تفاصيل الرواتب الشهرية لافراد شركة ميراج",
@@ -245,6 +336,8 @@ translations = {
         "reset_success": "✅ تم إعادة تعيين كلمة المرور للموظف {name} بنجاح.",
         "online_status": "🟢 متصل الآن",
         "offline_status": "⚪ غير متصل",
+        "unbind_device_btn": "🔓 فك ربط الجهاز",
+        "unbind_success": "✅ تم فك ربط الجهاز للموظف {name} بنجاح.",
     },
 }
 
@@ -395,6 +488,7 @@ else:
         df_admin = load_excel_df()
         
         online_users_set = get_online_users()
+        device_bindings = load_device_bindings()
 
         if df_admin is not None:
             for idx, row in df_admin.iterrows():
@@ -404,20 +498,30 @@ else:
                 has_pass = current_pwd not in ["", "nan", "None"]
                 
                 is_online = nid in online_users_set
+                has_device_bound = nid in device_bindings
                 presence_badge = t["online_status"] if is_online else t["offline_status"]
                 reg_status = "🔒" if has_pass else "⏳"
 
                 with st.sidebar.expander(f"👤 {name} [{presence_badge}] ({reg_status})"):
                     st.write(f"🆔 ID: `{nid}`")
                     st.write(f"🌐 الحالة: **{presence_badge}**")
-                    if has_pass:
-                        if st.button(t["reset_pass_btn"], key=f"reset_{nid}_{idx}"):
-                            df_admin.at[idx, "Password"] = ""
-                            save_excel_safely(df_admin)
-                            st.success(t["reset_success"].format(name=name))
-                            st.rerun()
-                    else:
-                        st.info("ℹ️ No password set yet.")
+                    st.write(f"📱 الجهاز: **{'مقترن بجهاز' if has_device_bound else 'غير مقترن'}**")
+                    
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if has_pass:
+                            if st.button(t["reset_pass_btn"], key=f"reset_{nid}_{idx}"):
+                                df_admin.at[idx, "Password"] = ""
+                                save_excel_safely(df_admin)
+                                st.success(t["reset_success"].format(name=name))
+                                st.rerun()
+                    with col_btn2:
+                        if has_device_bound:
+                            if st.button(t["unbind_device_btn"], key=f"unbind_{nid}_{idx}"):
+                                device_bindings.pop(nid, None)
+                                save_device_bindings(device_bindings)
+                                st.success(t["unbind_success"].format(name=name))
+                                st.rerun()
 
             st.sidebar.markdown("---")
             df_export = df_admin.copy()
@@ -451,6 +555,8 @@ else:
             os.remove(STATUS_FILE)
         if os.path.exists(ONLINE_FILE):
             os.remove(ONLINE_FILE)
+        if os.path.exists(DEVICES_FILE):
+            os.remove(DEVICES_FILE)
         st.cache_data.clear()
         st.rerun()
 
@@ -492,10 +598,10 @@ if not is_portal_open():
 # EMPLOYEE PORTAL VIEW
 # ====================================================================
 if st.session_state.get("logged_in_user"):
-    # تفعيل مؤقت الخمول لمدة 5 دقائق لإنهاء الجلسة تلقائياً
+    # تفعيل مؤقت الخمول
     auto_logout_listener(timeout_minutes=5)
     
-    # تحديث مؤشر الاتصال للموظف
+    # تحديث مؤشر الاتصال
     update_online_status(st.session_state.get("logged_in_id"), True)
 
     df_verify = load_excel_df()
@@ -571,12 +677,20 @@ else:
                         st.warning(t["empty_input"])
                     else:
                         clean_input_id = national_id_input.strip().replace(".0", "").replace("\t", "")
-                        matched = df[df["الرقم القومي"].astype(str).str.strip() == clean_input_id]
-                        if not matched.empty:
-                            st.session_state.checked_id = clean_input_id
-                            st.rerun()
+                        
+                        # --- فحص حظر الجهاز قبل متابعة الخطوات ---
+                        current_device = st.session_state.get("device_uuid")
+                        allowed, reason = is_device_allowed(current_device, clean_input_id)
+                        
+                        if not allowed:
+                            st.error(f"🛑 {reason}")
                         else:
-                            st.error(t["error_id"])
+                            matched = df[df["الرقم القومي"].astype(str).str.strip() == clean_input_id]
+                            if not matched.empty:
+                                st.session_state.checked_id = clean_input_id
+                                st.rerun()
+                            else:
+                                st.error(t["error_id"])
             else:
                 national_id_input = st.session_state.checked_id
                 df_current = load_excel_df()
@@ -609,6 +723,10 @@ else:
                                 if new_pass.strip() in existing_passes:
                                     st.error(t["pass_taken"])
                                 else:
+                                    # ربط الجهاز بالرقم القومي عند التسجيل الأول
+                                    current_device = st.session_state.get("device_uuid")
+                                    bind_device_to_id(current_device, national_id_input)
+                                    
                                     df_current.at[idx, "Password"] = new_pass.strip()
                                     save_excel_safely(df_current)
                                     st.session_state.logged_in_user = emp_name
@@ -627,6 +745,10 @@ else:
                             if not password_input:
                                 st.warning(t["empty_input"])
                             elif password_input.strip() == current_pass:
+                                # ربط الجهاز بالرقم القومي عند تسجيل الدخول الناجح
+                                current_device = st.session_state.get("device_uuid")
+                                bind_device_to_id(current_device, national_id_input)
+
                                 st.session_state.logged_in_user = emp_name
                                 st.session_state.logged_in_id = national_id_input
                                 st.session_state.employee_row_data = matched.loc[idx].to_dict()
